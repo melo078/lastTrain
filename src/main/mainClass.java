@@ -50,7 +50,7 @@ public class mainClass {
     private static final double epsilon = 1e-15;
 
     public enum Cate {
-        REACHABLE_PATH, REACHABLE_STATION, REACHABLE_REVERSE_PATH
+        REACHABLE_PATH, REACHABLE_STATION, REACHABLE_REVERSE_PATH, REACHABLE_MINTRANSFER_PATH
     }
 
     public static void fit(){
@@ -80,10 +80,12 @@ public class mainClass {
         graph.setUnVisitedVertex(unVisitedVertex);
         graph.cleanMinDisLink();
         graph.cleanMinTimeLink();
+        graph.cleanMinScoreLink();
         graph.cleanReachableSt();
         graph.cleanWalkTimeString();
         graph.cleanStack3();
         graph.cleanStack();
+        graph.cleanScore_Stack();
         graph.cleanStack2();
         graph.cleanStackPath();
         graph.cleanStackPath2();
@@ -364,7 +366,6 @@ public class mainClass {
         }
     }
 
-
     private static void AddSameTransferVertexAndEdge(Graph g,String sameTransStationAdj,String sameTransStationAdjDist,boolean isResource) {
         String temp1 = "";
         String [] str1 = null;
@@ -400,7 +401,7 @@ public class mainClass {
             e.printStackTrace();
         }
     }
-
+    //基于最小时间
     private static LinkedList<String> ComputeReachablePath(String startvertex,String dateString,String time,String endvertex,Boolean isReverse) {
         String ver=endvertex;
         String content="";
@@ -446,9 +447,14 @@ public class mainClass {
         return path;
     }
 
-    public static LinkedList<String> GetReachablePath(String datestring, String starttime, String startvertex, String endvertex) {
+    public static LinkedList<String> GetReachablePath(String datestring, String starttime, String startvertex, String endvertex,boolean isMinTransfer) {
         String [] tmp;
-        LinkedList<String> result = GetReachable(datestring,starttime,startvertex,endvertex,Cate.REACHABLE_PATH);
+        LinkedList<String> result ;
+        if (isMinTransfer){
+            result = GetReachable(datestring,starttime,startvertex,endvertex,Cate.REACHABLE_MINTRANSFER_PATH);
+        }else {
+            result = GetReachable(datestring,starttime,startvertex,endvertex,Cate.REACHABLE_PATH);
+        }
         LinkedList<String> output = new LinkedList<String>();
         //String arrivetime = ""; //记录第一段到达最后一个可达车站的时间
         LinkedList<String> simple = new LinkedList<String>();//记录输出路径包含的站点acc
@@ -597,12 +603,22 @@ public class mainClass {
         }
         return result;
     }
-
+    //基于时间最短的遍历
     private static LinkedList<String> GraphTraversal(String startVertex, String endVertex, String startTime, String dateString,String stationnametoacccode,Boolean isReverse) {
         graph.InitialSearchStartVertex(startVertex,dateString,startTime,endVertex);
         GraphSearchAlgorithm graphSearchAlgorithm =new GraphSearchAlgorithm();
         if(graphSearchAlgorithm.perform(graph, startVertex, dateString, startTime, endVertex,stationnametoacccode, isReverse)) {
             return ComputeReachablePath(startVertex,dateString,startTime,endVertex,isReverse);
+        } else {
+            return null;
+        }
+    }
+    //基于分数最小的遍历
+    private static LinkedList<String> GraphTraversal3(String startVertex, String endVertex, String startTime, String dateString,String stationnametoacccode,Boolean isReverse) {
+        graph.InitialSearchStartVertex(startVertex,dateString,startTime,endVertex);
+        GraphSearchAlgorithm graphSearchAlgorithm =new GraphSearchAlgorithm();
+        if(graphSearchAlgorithm.perform3(graph, startVertex, dateString, startTime, endVertex,stationnametoacccode, isReverse)) {
+            return ComputeReachablePath3(startVertex,dateString,startTime,endVertex,isReverse);
         } else {
             return null;
         }
@@ -621,7 +637,7 @@ public class mainClass {
         resetGraph();
         graph.setIsWeekend(CommonTools.isWeekend(datestring));
         //0是00:00:00的秒数，18000是05:00:00的秒数
-        LinkedList<String> reachableStation = new LinkedList<>();
+        LinkedList<String> reachableStation ;
             switch (type) {
                 case REACHABLE_STATION:
                     reachableStation = GraphTraversal(startvertex, endvertex, starttime, datestring, stationnametoacccode,false);
@@ -645,7 +661,7 @@ public class mainClass {
                             return stations;
 						}else {
 							return stations;
-						}	
+						}
                     } else {
                         return null;
                     }
@@ -656,6 +672,28 @@ public class mainClass {
                     } else {
                         return null;
                     }
+                case REACHABLE_MINTRANSFER_PATH:
+                    reachableStation = GraphTraversal3(startvertex, endvertex, starttime, datestring, stationnametoacccode,false);
+                   if(reachableStation !=null && reachableStation.size()>0){
+                        return reachableStation;
+                    } else {
+                        String minStation = startvertex;
+                        double minDist = GetGeoDistanceBetweenStations(startvertex,endvertex);
+                        for(String line: graph.getReachable()){
+                            String [] items = line.split(",");
+                            double currentDistance = GetGeoDistanceBetweenStations(items[0],endvertex);
+                            if (currentDistance - 0.0000001 > epsilon && minDist - currentDistance > epsilon) {
+                                minStation = items[0];
+                                minDist = currentDistance;
+                            }
+                        }
+                        if (minStation.equals(startvertex) == false){
+                            return ComputeReachablePath3(startvertex,datestring,starttime,minStation,false);
+                        } else {
+                            return reachableStation;
+                        }
+                    }
+
                 case REACHABLE_PATH:
                     reachableStation = GraphTraversal(startvertex, endvertex, starttime, datestring, stationnametoacccode,false);
                     if (reachableStation != null && reachableStation.size()>0) {
@@ -680,9 +718,8 @@ public class mainClass {
                 default:
                     return null;
             }
-        //}
     }
-
+    //基于距离
     private static LinkedList<String> ComputeReachablePath2(String startvertex2, String datestring2, String starttime2,
 			String minStation, boolean isReverse) {
 		// TODO Auto-generated method stub
@@ -728,21 +765,72 @@ public class mainClass {
           }
           return path;
 	}
+    //基于分数
+    private static LinkedList<String> ComputeReachablePath3(String startvertex2, String datestring2, String starttime2,
+                                                            String minStation, boolean isReverse) {
+        // TODO Auto-generated method stub
+        String ver=minStation;
+        String content="";
+        Boolean hasValidStation = false;
+        LinkedList<String> path = new LinkedList<String>();
+        graph.setStack4();
+        if (isReverse) {
+            ver=startvertex2;
+        }
 
+        while(!graph.getStack4().empty()) {
+            content=graph.getStack4().pop();
+            String str[]=content.split(",");
+            String station1 = str[1];
+            String station0 = str[0];
+            if (isReverse){
+                station1 = str[0];
+                station0 = str[1];
+            }
+            if(station1.equals(ver)) {
+                graph.AddStackPath(content);
+                ver=station0;
+            }
+        }
+        try {
+            String context = "";
+            while(!graph.getPathStack().empty()) {
+                content=graph.getPathStack().pop();
+                String str[]=content.split(",");
+                context = str[0]+","+str[1]+","+str[4]+","+str[3]+","+str[2];
+                if (str[2].equals(Graph.UpperLimitTime) == false) {
+                    hasValidStation = true;
+                }
+                path.add(context);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        if (hasValidStation == false) {
+            path.clear();
+        }
+        return path;
+    }
 	// 三元桥机场线bug
     public static void main(String[] args) throws IOException {
     	fit();
-    	LinkedList<String> stations = mainClass.GetReachableStation("2018-06-13","21:10:30","150995204");
-    	  for(String string : stations) {
-    			  System.out.println(string);
-				
-    	  }
+//    	LinkedList<String> stations = mainClass.GetReachableStation("2018-06-13","21:10:30","150995204");
+//    	  for(String string : stations) {
+//    			  System.out.println(string);
+//
+//    	  }
         	  
           
-//		LinkedList<String> path = mainClass.GetReachablePath("2018-06-13","21:00:00","151018263","150998573");
+//		LinkedList<String> path = mainClass.GetReachablePath("2018-06-13","23:00:00","151018037","150996029",false);
 //         for(String string : path) {
 //        	  System.out.println(string);
-//          } 
+//          }
+//          System.out.println("------------------------------------------------");
+		LinkedList<String> path1 = mainClass.GetReachablePath("2018-06-13","22:58:00","151018037","150996029",true);
+         for(String string : path1) {
+        	  System.out.println(string);
+          }
+          //System.out.println(graph.getMinScoreLink().get("150997279"));
 //        BufferedReader bReader = null;
 //   	 	BufferedReader path = null;
 //   	 	String temps = "";
@@ -889,7 +977,7 @@ public class mainClass {
         System.out.println("avg:"+ timeConsume.stream().collect(Collectors.averagingInt(x -> x.intValue() ))  );
     }
 
-
+    //基于距离
     private static LinkedList<String> GetReachableStation2(String startvertex,String endvertex) {
         resetGraph();
         String startVertex1 = startvertex;
@@ -901,8 +989,7 @@ public class mainClass {
             return null;
         }
     }
-
-
+    //基于距离
     private static LinkedList<String> GraphTraversal2(String startVertex, String endVertex,String stationnametoacccode) {
         graph.InitialSearchStartVertex2(startVertex,endVertex);
         GraphSearchAlgorithm graphSearchAlgorithm =new GraphSearchAlgorithm();
@@ -913,7 +1000,7 @@ public class mainClass {
             return null;
         }
     }
-
+    //基于距离
     private static LinkedList<String> GetshortPath(String startvertex,String endvertex) {
         String ver=endvertex;
         String content="";
